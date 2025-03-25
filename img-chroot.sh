@@ -35,6 +35,8 @@ catch_error() {
 
 	if [ "$1" = '--warn' ]; then
 		shift
+		eprintln "$*"
+		return 0
 	fi
 	msg=$1
 	panic "$msg: Failure"
@@ -129,6 +131,8 @@ catch_error 'bind mount /sys/'
 
 mount --bind /proc "${mount_point}/proc/"
 catch_error 'bind mount /proc/'
+
+cp /etc/resolv.conf "${mount_point}/etc/"
 
 # chroot to raspbian
 chroot "${mount_point}" /bin/bash
