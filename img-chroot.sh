@@ -42,7 +42,7 @@ catch_error() {
 
 usage() {
 	echo "$0 <image or block device> <mount point>"
-	exit 2
+	abort
 }
 
 CLEAN_UP() {
@@ -58,7 +58,8 @@ CLEAN_UP() {
 }
 
 if [ $# -lt 2 ]; then
-	_usage
+	eprintln 'Missing argument(s)'
+	usage
 fi
 
 if ! command -v kpartx >> /dev/null; then
@@ -132,4 +133,6 @@ catch_error 'bind mount /proc/'
 # chroot to raspbian
 chroot "${mount_point}" /bin/bash
 catch_error chroot
+
+CLEAN_UP
 
