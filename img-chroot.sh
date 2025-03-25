@@ -51,6 +51,11 @@ CLEAN_UP() {
 	if [ -z "$mount_point" ] || [ ! -d "$mount_point" ]; then
 		return 0
 	fi
+
+	if [ -f "${mount_point}/etc/resolv.conf.BAK" ]; then
+		mv -v "${mount_point}/etc/resolv.conf.BAK" \
+		      "${mount_point}/etc/resolv.conf"
+	fi
 	umount "${mount_point}/dev/pts/" 2>> /dev/null
 	umount "${mount_point}/dev/" 2>> /dev/null
 	umount "${mount_point}/sys/" 2>> /dev/null
@@ -132,6 +137,10 @@ catch_error 'bind mount /sys/'
 mount --bind /proc "${mount_point}/proc/"
 catch_error 'bind mount /proc/'
 
+if [ -f "${mount_point}/etc/resolv.conf" ]; then
+	mv -v "${mount_point}/etc/resolv.conf" \
+	      "${mount_point}/etc/resolv.conf.BAK"
+fi
 cp /etc/resolv.conf "${mount_point}/etc/"
 
 # chroot to raspbian
