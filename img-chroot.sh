@@ -48,6 +48,10 @@ usage() {
 }
 
 CLEAN_UP() {
+	if [ -n "$term_store" ]; then
+		export TERM=$term_store
+	fi
+
 	if [ -z "$mount_point" ] || [ ! -d "$mount_point" ]; then
 		return 0
 	fi
@@ -81,6 +85,8 @@ mount_point=$2
 if [ ! -d "$mount_point" ]; then
 	panic "mount point '$mount_point' does not exist"
 fi
+
+term_store=$TERM
 
 image_or_block=$1
 part_info=$(kpartx "$image_or_block")
@@ -144,6 +150,8 @@ fi
 cp /etc/resolv.conf "${mount_point}/etc/"
 
 # chroot to raspbian
+export TERM=xterm-256color
+
 chroot "${mount_point}" /bin/bash
 catch_error chroot
 
