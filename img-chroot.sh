@@ -68,6 +68,43 @@ CLEAN_UP() {
 	umount "${mount_point}" 2>> /dev/null
 }
 
+umount=false
+mount_only=false
+while getopts ':-:p:h' opt; do
+	if [ "$opt" = "-" ]; then
+		opt="${OPTARG%%=*}"
+		OPTARG="${OPTARG#$opt}"
+		OPTARG="${OPTARG#=}"
+	fi
+
+	case "$opt" in
+	m | mount-only)  mount_only=true;;
+	u | umount)      umount=true;;
+	h | help)        echo 'lol no'; return;;
+	\?)              exit 2;;
+	*)               eprintln "$OPTARG: invalid init argument";;
+	esac
+done
+shift $((OPTIND-1))
+
+if [ $EUID -ne 0 ]; then
+	panic "must be superuser to use $0"
+fi
+
+if $umount; then
+	mount_point="$1"
+	if [ ! -d "$mount_point" ]; then
+		panic "mount point '$mount_point' does not exist"
+	fi
+	umount "${mount_point}/dev/pts/" 2>> /dev/null
+	umount "${mount_point}/dev/" 2>> /dev/null
+	umount "${mount_point}/sys/" 2>> /dev/null
+	umount "${mount_point}/proc/" 2>> /dev/null
+	umount "${mount_point}/boot/"
+	umount "${mount_point}"
+	exit
+fi
+
 if [ $# -lt 2 ]; then
 	eprintln 'Missing argument(s)'
 	usage
@@ -75,10 +112,6 @@ fi
 
 if ! command -v kpartx >> /dev/null; then
 	panic "$0 depends on kpartx"
-fi
-
-if [ $EUID -ne 0 ]; then
-	panic "must be superuser to use $0"
 fi
 
 mount_point=$2
@@ -129,6 +162,10 @@ elif [ -f "$1" ]; then
 	catch_error 'mount boot partition'
 else
 	panic "'$image_or_block' is not a block device or file"
+fi
+
+if $mount_only; then
+	exit 0
 fi
 
 mount --bind /dev "${mount_point}/dev/"
