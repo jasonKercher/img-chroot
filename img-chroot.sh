@@ -52,7 +52,7 @@ CLEAN_UP() {
 		export TERM=$term_store
 	fi
 
-	if [ -z "$mount_point" ] || [ ! -d "$mount_point" ]; then
+	if [ ! -d "$mount_point" ]; then
 		return 0
 	fi
 
@@ -64,8 +64,23 @@ CLEAN_UP() {
 	umount "${mount_point}/dev/" 2>> /dev/null
 	umount "${mount_point}/sys/" 2>> /dev/null
 	umount "${mount_point}/proc/" 2>> /dev/null
-	umount "${mount_point}/boot/" 2>> /dev/null
-	umount "${mount_point}" 2>> /dev/null
+
+	if [ -d "$boot_mount_point" ]; then
+		# If this is the case, the root file system is mounted FROM the
+		# boot partition, so we must umount root FIRST!
+		if readlink "${mount_point}/boot/bootfiles" >> /dev/null; then
+			rm "${mount_point}/boot/bootfiles"
+
+			umount "${mount_point}" 2>> /dev/null
+			umount "$boot_mount_point"
+			rmdir -v "$boot_mount_point"
+		else
+			umount "$boot_mount_point"
+			umount "${mount_point}"
+		fi
+	else
+		umount "${mount_point}" 2>> /dev/null
+	fi
 }
 
 umount=false
@@ -100,8 +115,19 @@ if $umount; then
 	umount "${mount_point}/dev/" 2>> /dev/null
 	umount "${mount_point}/sys/" 2>> /dev/null
 	umount "${mount_point}/proc/" 2>> /dev/null
-	umount "${mount_point}/boot/"
-	umount "${mount_point}"
+
+	# If this is the case, the root file system is mounted FROM the
+	# boot partition, so we must umount root FIRST!
+	if readlink "${mount_point}/boot/bootfiles" >> /dev/null; then
+		rm -v "${mount_point}/boot/bootfiles"
+
+		umount "${mount_point}" 2>> /dev/null
+		umount "$boot_mount_point"
+		rmdir -v "$boot_mount_point"
+	else
+		umount "$boot_mount_point"
+		umount "${mount_point}"
+	fi
 	exit
 fi
 
@@ -125,43 +151,60 @@ image_or_block=$1
 part_info=$(kpartx "$image_or_block")
 catch_error kpartx
 
-# NOTE: logic assumes 2 partitions = boot,linux.
 # TODO: Not this.
 part_count=$(wc -l <<< "$part_info")
-if [ $part_count -ne 2 ]; then
-	panicf 'Found %d partitions. Expected 2.\n' $part_count
+if [ $part_count -gt 2 ]; then
+	panicf 'Found %d partitions. Expected 1 or 2.\n' $part_count
 fi
 
 boot_part=$(head -1 <<< "$part_info")
 linux_part=$(tail -1 <<< "$part_info")
 
+boot_mount_point="${mount_point}/boot"
+if [ $part_count -eq 1 ]; then
+	boot_mount_point=$(mktemp -d)
+	echo "Boot mount point: '$boot_mount_point'"
+fi
+
 if [ -b "$image_or_block" ]; then
-	linux_dev=$(cut -d' ' -f1 <<< "$linux_part")
+	if [ $part_count -eq 2 ]; then
+		linux_dev=$(cut -d' ' -f1 <<< "$linux_part")
+		mount "/dev/${linux_dev}" "$mount_point"
+		catch_error 'mount linux partition'
+	fi
+
 	boot_dev=$(cut -d' ' -f1 <<< "$boot_part")
-
-	mount "/dev/${linux_dev}" "$mount_point"
-	catch_error 'mount linux partition'
-
-	mount "/dev/${boot_dev}" "${mount_point}/boot/"
+	mount "/dev/${boot_dev}" "$boot_mount_point"
 	catch_error 'mount boot partition'
 elif [ -f "$1" ]; then
-	linux_off=$(cut -d' ' -f6 <<< "$linux_part")
-	((linux_off *= 512))
-	linux_sz=$(cut -d' ' -f4 <<< "$linux_part")
-	((linux_sz *= 512))
+	if [ $part_count -eq 2 ]; then
+		linux_off=$(cut -d' ' -f6 <<< "$linux_part")
+		((linux_off *= 512))
+		linux_sz=$(cut -d' ' -f4 <<< "$linux_part")
+		((linux_sz *= 512))
+
+		mount -o loop,offset=$linux_off,sizelimit=$linux_sz "$image_or_block" "$mount_point"
+		catch_error 'mount linux partition'
+	fi
 
 	boot_off=$(cut -d' ' -f6 <<< "$boot_part")
 	((boot_off *= 512))
 	boot_sz=$(cut -d' ' -f4 <<< "$boot_part")
 	((boot_sz *= 512))
 
-	mount -o loop,offset=$linux_off,sizelimit=$linux_sz "$image_or_block" "${mount_point}"
-	catch_error 'mount linux partition'
-
-	mount -o loop,offset=$boot_off,sizelimit=$boot_sz "$image_or_block" "${mount_point}/boot/"
+	mount -o loop,offset=$boot_off,sizelimit=$boot_sz "$image_or_block" "$boot_mount_point"
 	catch_error 'mount boot partition'
 else
 	panic "'$image_or_block' is not a block device or file"
+fi
+
+# If there is only 1 partition, then we are going to assume, there is a
+# filesystem "file" in the boot partition that must be mounted.
+if [ $part_count -eq 1 ]; then
+	mount "${boot_mount_point}/"*.ext* "$mount_point"
+	catch_error 'failed to mount filesystem file'
+
+	ln -s "$boot_mount_point" "${mount_point}/boot/bootfiles"
 fi
 
 if $mount_only; then
@@ -180,7 +223,7 @@ catch_error 'bind mount /sys/'
 mount --bind /proc "${mount_point}/proc/"
 catch_error 'bind mount /proc/'
 
-if [ -f "${mount_point}/etc/resolv.conf" ]; then
+if [ -f "${mount_point}/etc/resolv.conf" ] || readlink "${mount_point}/etc/resolv.conf" >> /dev/null; then
 	mv -v "${mount_point}/etc/resolv.conf" \
 	      "${mount_point}/etc/resolv.conf.BAK"
 fi
