@@ -59,6 +59,8 @@ CLEAN_UP() {
 	if [ -f "${mount_point}/etc/resolv.conf.BAK" ]; then
 		mv -v "${mount_point}/etc/resolv.conf.BAK" \
 		      "${mount_point}/etc/resolv.conf"
+	else
+		rm "${mount_point}/etc/resolv.conf"
 	fi
 	umount "${mount_point}/dev/pts/" 2>> /dev/null
 	umount "${mount_point}/dev/" 2>> /dev/null
@@ -108,26 +110,7 @@ fi
 
 if $umount; then
 	mount_point="$1"
-	if [ ! -d "$mount_point" ]; then
-		panic "mount point '$mount_point' does not exist"
-	fi
-	umount "${mount_point}/dev/pts/" 2>> /dev/null
-	umount "${mount_point}/dev/" 2>> /dev/null
-	umount "${mount_point}/sys/" 2>> /dev/null
-	umount "${mount_point}/proc/" 2>> /dev/null
-
-	# If this is the case, the root file system is mounted FROM the
-	# boot partition, so we must umount root FIRST!
-	if readlink "${mount_point}/boot/bootfiles" >> /dev/null; then
-		rm -v "${mount_point}/boot/bootfiles"
-
-		umount "${mount_point}" 2>> /dev/null
-		umount "$boot_mount_point"
-		rmdir -v "$boot_mount_point"
-	else
-		umount "$boot_mount_point"
-		umount "${mount_point}"
-	fi
+	CLEAN_UP
 	exit
 fi
 
