@@ -60,28 +60,26 @@ CLEAN_UP() {
 		mv -v "${mount_point}/etc/resolv.conf.BAK" \
 		      "${mount_point}/etc/resolv.conf"
 	else
-		rm "${mount_point}/etc/resolv.conf"
+		rm "${mount_point}/etc/resolv.conf" 2>> /dev/null
 	fi
 	umount "${mount_point}/dev/pts/" 2>> /dev/null
 	umount "${mount_point}/dev/" 2>> /dev/null
 	umount "${mount_point}/sys/" 2>> /dev/null
 	umount "${mount_point}/proc/" 2>> /dev/null
 
-	if [ -d "$boot_mount_point" ]; then
-		# If this is the case, the root file system is mounted FROM the
-		# boot partition, so we must umount root FIRST!
-		if readlink "${mount_point}/boot/bootfiles" >> /dev/null; then
-			rm "${mount_point}/boot/bootfiles"
+	# If this is the case, the root file system is mounted FROM the
+	# boot partition, so we must umount root FIRST!
+	local boot_mount_point
+	boot_mount_point=$(readlink "${mount_point}/boot/bootfiles")
+	if [ $? -eq 0 ]; then
+		rm "${mount_point}/boot/bootfiles"
 
-			umount "${mount_point}" 2>> /dev/null
-			umount "$boot_mount_point"
-			rmdir -v "$boot_mount_point"
-		else
-			umount "$boot_mount_point"
-			umount "${mount_point}"
-		fi
-	else
 		umount "${mount_point}" 2>> /dev/null
+		umount "$boot_mount_point"
+		rmdir -v "$boot_mount_point"
+	else
+		umount "${mount_point}/boot"
+		umount "${mount_point}"
 	fi
 }
 
@@ -159,7 +157,7 @@ if [ -b "$image_or_block" ]; then
 	boot_dev=$(cut -d' ' -f1 <<< "$boot_part")
 	mount "/dev/${boot_dev}" "$boot_mount_point"
 	catch_error 'mount boot partition'
-elif [ -f "$1" ]; then
+elif [ -f "$image_or_block" ]; then
 	if [ $part_count -eq 2 ]; then
 		linux_off=$(cut -d' ' -f6 <<< "$linux_part")
 		((linux_off *= 512))
